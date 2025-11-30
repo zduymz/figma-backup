@@ -279,13 +279,11 @@
         disabled: toggleButton.disabled,
         style: window.getComputedStyle(toggleButton).display
       });
-      await randomWait();
       robustClick(toggleButton);
       console.log('✓ Clicked toggle-menu-button');
       
       // Step 2: Click mainMenu-file-menu-*
       console.log('Step 2: Waiting for mainMenu-file-menu-*...');
-    //   await randomWait();
       const fileMenuButton = await waitForElementByIdPrefix('mainMenu-file-menu-', 15000);
       console.log('Found mainMenu-file-menu-*', fileMenuButton);
       console.log('Element details:', {
@@ -294,13 +292,11 @@
         tagName: fileMenuButton.tagName,
         visible: fileMenuButton.offsetParent !== null
       });
-    //   await randomWait();
       robustClick(fileMenuButton);
       console.log('✓ Clicked mainMenu-file-menu-*');
       
       // Step 3: Click mainMenu-save-as-*
       console.log('Step 3: Waiting for mainMenu-save-as-*...');
-    //   await randomWait();
       const saveAsButton = await waitForElementByIdPrefix('mainMenu-save-as-', 15000);
       console.log('Found mainMenu-save-as-*', saveAsButton);
       console.log('Element details:', {
@@ -309,7 +305,6 @@
         tagName: saveAsButton.tagName,
         visible: saveAsButton.offsetParent !== null
       });
-      await randomWait(1000,5000);
       robustClick(saveAsButton);
       console.log('✓ Clicked mainMenu-save-as-*');
       
