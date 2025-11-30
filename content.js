@@ -400,6 +400,12 @@
         stack: error.stack,
         url: window.location.href
       });
+      
+      // Reload the page to retry
+      console.log('Reloading page to retry...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000); // Wait 2 seconds before reloading to see the error message
     }
   }
 
