@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Figma Backup Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Figma Backup Dashboard</h1>
+      <div class="file-input-wrapper">
+        <input type="file" id="jsonFileInput" accept=".json" />
+        <label for="jsonFileInput" class="file-input-label">Load JSON File</label>
+      </div>
+    </header>
+    
+    <div class="dashboard" id="dashboard">
+      <div class="empty-state">
+        <p>Please load a JSON file to view projects and files</p>
+      </div>
+    </div>
+    
+    <div class="actions" id="actions" style="display: none;">
+      <button id="downloadBtn" class="download-btn">Download Selected</button>
+      <span id="selectedCount" class="selected-count">0 files selected</span>
+    </div>
+  </div>
+  
+  <script src="dashboard.js"></script>
+</body>
+</html>
+

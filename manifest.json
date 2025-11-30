@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Figma Backup Dashboard",
+  "version": "1.0.0",
+  "description": "Load JSON file and open Figma files in new tabs",
+  "permissions": [
+    "tabs",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://www.figma.com/*"
+  ],
+  "action": {
+    "default_title": "Figma Backup Dashboard"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.figma.com/design/*",
+        "https://www.figma.com/file/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
+
