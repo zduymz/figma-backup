@@ -205,37 +205,72 @@
 
   // Watch for WAF button and click it if visible
   function watchForWAFButton() {
+    let clicked = false;
+    
     const checkWAFButton = async () => {
+      if (clicked) return true; // Already clicked, don't check again
+      
       const wafButton = document.querySelector('#WAF-open-popup-button');
-      if (wafButton && wafButton.offsetParent !== null) {
-        // Element is visible
-        await robustClick(wafButton);
-        console.log('Clicked WAF-open-popup-button');
-        return true;
+      console.log('Checking for WAF button:', {
+        found: !!wafButton,
+        visible: wafButton ? wafButton.offsetParent !== null : false,
+        display: wafButton ? window.getComputedStyle(wafButton).display : 'N/A',
+        visibility: wafButton ? window.getComputedStyle(wafButton).visibility : 'N/A'
+      });
+      
+      if (wafButton) {
+        // Check if element is actually visible
+        const isVisible = wafButton.offsetParent !== null &&
+                         window.getComputedStyle(wafButton).display !== 'none' &&
+                         window.getComputedStyle(wafButton).visibility !== 'hidden' &&
+                         wafButton.getBoundingClientRect().width > 0 &&
+                         wafButton.getBoundingClientRect().height > 0;
+        
+        if (isVisible) {
+          console.log('WAF button is visible, clicking...');
+          clicked = true;
+          await robustClick(wafButton);
+          console.log('✓ Clicked WAF-open-popup-button');
+          return true;
+        }
       }
       return false;
     };
 
     // Check immediately
-    if (checkWAFButton()) {
-      return;
-    }
+    checkWAFButton().then(clicked => {
+      if (clicked) return;
+    });
 
     // Watch for it to appear
     const observer = new MutationObserver(() => {
-      checkWAFButton();
+      if (!clicked) {
+        checkWAFButton().then(clicked => {
+          if (clicked) {
+            observer.disconnect();
+            clearInterval(interval);
+          }
+        });
+      }
     });
 
     observer.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ['style', 'class']
+      attributeFilter: ['style', 'class', 'id']
     });
 
     // Also check periodically
     const interval = setInterval(() => {
-      if (checkWAFButton()) {
+      if (!clicked) {
+        checkWAFButton().then(clicked => {
+          if (clicked) {
+            clearInterval(interval);
+            observer.disconnect();
+          }
+        });
+      } else {
         clearInterval(interval);
         observer.disconnect();
       }
@@ -243,6 +278,9 @@
 
     // Stop watching after 60 seconds
     setTimeout(() => {
+      if (!clicked) {
+        console.log('WAF button watcher stopped after 60 seconds');
+      }
       clearInterval(interval);
       observer.disconnect();
     }, 60000);
