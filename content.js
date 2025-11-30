@@ -2,6 +2,39 @@
 (function() {
   console.log('Figma Backup Content Script loaded!', window.location.href);
   
+  // Check if we're on the WAF validation page
+  function isWAFValidationPage() {
+    return window.location.href.includes('figma.com/waf-validation-captcha');
+  }
+
+  // Handle WAF validation CAPTCHA page
+  async function handleWAFValidation() {
+    if (!isWAFValidationPage()) {
+      return false;
+    }
+
+    console.log('Detected WAF validation page, waiting for CAPTCHA button...');
+    
+    try {
+      // Wait for the CAPTCHA button to appear
+      const captchaButton = await waitForElement('#amzn-captcha-verify-button', 30000);
+      console.log('Found CAPTCHA button:', captchaButton);
+      
+      // Click the button
+      await robustClick(captchaButton);
+      console.log('✓ Clicked amzn-captcha-verify-button');
+      
+      // Wait for page to redirect/load after clicking
+      // console.log('Waiting for page to process CAPTCHA...');
+      // await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      return true;
+    } catch (error) {
+      console.error('Error handling WAF validation:', error);
+      return false;
+    }
+  }
+  
   // Random wait between min and max milliseconds
   function randomWait(min = 100, max = 1000) {
     const delay = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -409,8 +442,27 @@
     }
   }
 
-  // Run the sequence
-  console.log('Content script initialized, starting sequence...');
-  runClickSequence();
+  // Main entry point
+  async function init() {
+    console.log('Content script initialized, checking page type...');
+    
+    // First, check if we're on WAF validation page
+    if (isWAFValidationPage()) {
+      console.log('On WAF validation page, handling CAPTCHA...');
+      const handled = await handleWAFValidation();
+      if (handled) {
+        console.log('WAF validation handled, page should redirect...');
+        // The page will redirect after CAPTCHA, so we don't need to run the main sequence here
+        return;
+      }
+    }
+    
+    // If not on WAF page or after handling it, run the main click sequence
+    console.log('Running main click sequence...');
+    runClickSequence();
+  }
+
+  // Run the initialization
+  init();
 })();
 
