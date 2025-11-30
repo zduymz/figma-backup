@@ -61,6 +61,7 @@ header h1 {
   flex: 1;
   overflow-y: auto;
   padding: 30px 40px;
+  padding-bottom: 120px; /* Add padding to prevent content from being hidden behind fixed actions */
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -218,13 +219,27 @@ header h1 {
 }
 
 .actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   padding: 20px 40px;
   background: white;
   border-top: 1px solid #e0e0e0;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 20px;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+}
+
+.download-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
 .download-btn {
@@ -238,6 +253,12 @@ header h1 {
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 180px;
 }
 
 .download-btn:hover:not(:disabled) {
@@ -250,14 +271,67 @@ header h1 {
 }
 
 .download-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
   cursor: not-allowed;
+  transform: none;
+}
+
+.btn-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.download-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-text {
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .selected-count {
   color: #666;
   font-size: 16px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Scrollbar styling */

@@ -23,7 +23,20 @@
     </div>
     
     <div class="actions" id="actions" style="display: none;">
-      <button id="downloadBtn" class="download-btn">Download Selected</button>
+      <div class="download-section">
+        <button id="downloadBtn" class="download-btn">
+          <span class="btn-text">Download Selected</span>
+          <span class="btn-loader" style="display: none;">
+            <span class="spinner"></span>
+          </span>
+        </button>
+        <div class="download-progress" id="downloadProgress" style="display: none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <span class="progress-text" id="progressText">Opening tabs...</span>
+        </div>
+      </div>
       <span id="selectedCount" class="selected-count">0 files selected</span>
     </div>
   </div>

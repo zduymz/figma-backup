@@ -241,11 +241,11 @@
       }
     }, 500);
 
-    // Stop watching after 30 seconds
+    // Stop watching after 60 seconds
     setTimeout(() => {
       clearInterval(interval);
       observer.disconnect();
-    }, 30000);
+    }, 60000);
   }
 
   // Main sequence of clicks

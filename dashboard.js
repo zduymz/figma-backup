@@ -9,6 +9,11 @@ const dashboard = document.getElementById('dashboard');
 const actions = document.getElementById('actions');
 const downloadBtn = document.getElementById('downloadBtn');
 const selectedCount = document.getElementById('selectedCount');
+const downloadProgress = document.getElementById('downloadProgress');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const btnText = downloadBtn.querySelector('.btn-text');
+const btnLoader = downloadBtn.querySelector('.btn-loader');
 
 // Load JSON file
 jsonFileInput.addEventListener('change', (event) => {
@@ -238,27 +243,64 @@ downloadBtn.addEventListener('click', async () => {
     return;
   }
 
+  // Disable button and show loading state
+  downloadBtn.disabled = true;
+  btnText.style.display = 'none';
+  btnLoader.style.display = 'inline-block';
+  downloadProgress.style.display = 'block';
+  
   // Store project name mapping in chrome.storage for content script
   const projectMap = Object.fromEntries(fileProjectMap);
   await chrome.storage.local.set({ fileProjectMap: projectMap });
   console.log('Stored project name mapping:', projectMap);
 
-  // Open each selected URL in a new tab
+  // Open each selected URL in a new tab with progress tracking
   const urls = Array.from(selectedFiles);
-  urls.forEach((url, index) => {
-    // Add a small delay to avoid overwhelming the browser
-    setTimeout(() => {
-      chrome.tabs.create({ url: url });
-    }, index * 100);
-  });
+  const totalFiles = urls.length;
+  let openedTabs = 0;
 
-  // Clear selection after opening
-  selectedFiles.clear();
-  fileProjectMap.clear();
-  document.querySelectorAll('.file-checkbox').forEach(cb => {
-    cb.checked = false;
+  // Update progress
+  const updateProgress = (current, total) => {
+    const percentage = Math.round((current / total) * 100);
+    progressFill.style.width = `${percentage}%`;
+    progressText.textContent = `Opening ${current} of ${total} files...`;
+  };
+
+  // Open tabs with progress updates
+  urls.forEach((url, index) => {
+    setTimeout(() => {
+      chrome.tabs.create({ url: url }, () => {
+        openedTabs++;
+        updateProgress(openedTabs, totalFiles);
+        
+        // When all tabs are opened, show completion message
+        if (openedTabs === totalFiles) {
+          setTimeout(() => {
+            progressText.textContent = `✓ All ${totalFiles} files opened! Downloads will start automatically.`;
+            progressFill.style.width = '100%';
+            
+            // Reset after a delay
+            setTimeout(() => {
+              // Clear selection after opening
+              selectedFiles.clear();
+              fileProjectMap.clear();
+              document.querySelectorAll('.file-checkbox').forEach(cb => {
+                cb.checked = false;
+              });
+              updateSelectedCount();
+              
+              // Reset button state
+              downloadBtn.disabled = false;
+              btnText.style.display = 'inline';
+              btnLoader.style.display = 'none';
+              downloadProgress.style.display = 'none';
+              progressFill.style.width = '0%';
+            }, 3000);
+          }, 500);
+        }
+      });
+    }, index * 150);
   });
-  updateSelectedCount();
 });
 
 // Utility function to escape HTML
