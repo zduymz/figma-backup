@@ -248,10 +248,49 @@
     }, 60000);
   }
 
+  // Wait for tab to become active/visible
+  function waitForTabActive() {
+    return new Promise((resolve) => {
+      // Check if tab is already visible
+      if (!document.hidden) {
+        console.log('Tab is already active');
+        resolve();
+        return;
+      }
+
+      console.log('Tab is not active, waiting for it to become active...');
+      
+      // Listen for visibility change
+      const handleVisibilityChange = () => {
+        if (!document.hidden) {
+          console.log('Tab became active');
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          resolve();
+        }
+      };
+
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Also check periodically in case the event doesn't fire
+      const checkInterval = setInterval(() => {
+        if (!document.hidden) {
+          console.log('Tab became active (polling)');
+          clearInterval(checkInterval);
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          resolve();
+        }
+      }, 500);
+    });
+  }
+
   // Main sequence of clicks
   async function runClickSequence() {
     try {
       console.log('Starting click sequence...');
+      
+      // Wait for tab to be active/visible
+      await waitForTabActive();
+      console.log('Tab is active, proceeding...');
       
       // Wait for page to fully load
       console.log('Waiting for page load...');
