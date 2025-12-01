@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Figma Backup Dashboard",
+  "name": "Figma Backup",
   "version": "1.0.0",
   "description": "Load JSON file and open Figma files in new tabs",
   "permissions": [
@@ -12,7 +12,7 @@
     "https://www.figma.com/*"
   ],
   "action": {
-    "default_title": "Figma Backup Dashboard"
+    "default_title": "Figma Backup"
   },
   "background": {
     "service_worker": "background.js"

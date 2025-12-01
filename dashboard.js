@@ -538,6 +538,25 @@ downloadBtn.addEventListener('click', async () => {
     return;
   }
 
+  // Get URLs before clearing (we need them for the download)
+  const urls = Array.from(selectedFiles);
+  const totalFiles = urls.length;
+  const projectMapToStore = Object.fromEntries(fileProjectMap);
+
+  // Reset all selections immediately
+  selectedFiles.clear();
+  fileProjectMap.clear();
+  document.querySelectorAll('.file-checkbox').forEach(cb => {
+    cb.checked = false;
+  });
+  
+  // Reset all "Select All" buttons
+  document.querySelectorAll('.select-all-btn').forEach(btn => {
+    btn.textContent = 'Select All';
+  });
+  
+  updateSelectedCount();
+
   // Disable button and show loading state
   downloadBtn.disabled = true;
   btnText.style.display = 'none';
@@ -545,13 +564,8 @@ downloadBtn.addEventListener('click', async () => {
   downloadProgress.style.display = 'block';
   
   // Store project name mapping in chrome.storage for content script
-  const projectMap = Object.fromEntries(fileProjectMap);
-  await chrome.storage.local.set({ fileProjectMap: projectMap });
-  console.log('Stored project name mapping:', projectMap);
-
-  // Get URLs and send to background script for queued opening
-  const urls = Array.from(selectedFiles);
-  const totalFiles = urls.length;
+  await chrome.storage.local.set({ fileProjectMap: projectMapToStore });
+  console.log('Stored project name mapping:', projectMapToStore);
 
   // Update progress function
   const updateProgress = (current, total) => {
@@ -580,14 +594,6 @@ downloadBtn.addEventListener('click', async () => {
           
           // Reset after a delay
           setTimeout(() => {
-            // Clear selection after opening
-            selectedFiles.clear();
-            fileProjectMap.clear();
-            document.querySelectorAll('.file-checkbox').forEach(cb => {
-              cb.checked = false;
-            });
-            updateSelectedCount();
-            
             // Reset button state
             downloadBtn.disabled = false;
             btnText.style.display = 'inline';
