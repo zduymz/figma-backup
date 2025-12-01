@@ -1,13 +1,25 @@
 # Figma Backup Dashboard Chrome Extension
 
-A Chrome extension that allows you to load a JSON file containing Figma projects and files, then open selected files in new tabs.
+A Chrome extension that automates downloading Figma files by fetching projects from the Figma API and automatically opening, saving, and closing files in sequence.
 
 ## Features
 
-- Load JSON files with project and file information
-- Display projects and files in a clean dashboard with two columns
-- Select multiple files using checkboxes
-- Open all selected files in new tabs with one click
+- **Figma API Integration**: Fetch projects and files directly from Figma API using your API key
+- **Flexible Download Options**: 
+  - Download files from a specific project by Project ID
+  - Download all files from all projects in a team by Team ID
+- **Smart Tab Management**: 
+  - Limits concurrent tabs (default: 20, configurable)
+  - Automatically opens next file when a tab closes
+  - Prevents browser overload
+- **Automated Download Process**:
+  - Automatically clicks through Figma menus to save files
+  - Handles WAF validation CAPTCHA automatically
+  - Closes tabs after downloads complete
+  - Only runs when tab is active/focused
+- **Rate Limit Handling**: Automatically handles API rate limits (429 responses) with retry logic
+- **Collapsible Projects**: Projects are organized in collapsible sections with "Select All" functionality
+- **Progress Tracking**: Real-time progress bar showing download status
 
 ## Installation
 
@@ -17,47 +29,150 @@ A Chrome extension that allows you to load a JSON file containing Figma projects
 4. Select the `figma-backup` folder
 5. The extension icon should now appear in your Chrome toolbar
 
+## Getting Your Figma API Key
+
+1. Go to [Figma Account Settings](https://www.figma.com/settings)
+2. Navigate to "Personal access tokens" section
+3. Click "Create a new personal access token"
+4. Give it a name and copy the token
+5. Use this token as your API key in the extension
+
 ## Usage
 
+### Initial Setup
+
 1. Click the extension icon in your Chrome toolbar
-2. Click "Load JSON File" and select your JSON file
-3. The dashboard will display all projects and their files in a table
-4. Check the boxes next to the files you want to open
-5. Click "Download Selected" to open all selected files in new tabs
+2. Enter your Figma API key in the input field
+3. Click "Save API Key"
+4. The API key is stored securely in Chrome's local storage
 
-## JSON File Format
+### Downloading Files
 
-The extension expects a JSON file with the following structure:
+#### Option 1: Download by Project ID
 
-```json
-[
-  {
-    "name": "Project Name",
-    "files": [
-      {
-        "key": "figma-file-key",
-        "name": "File Name",
-        "thumbnail_url": "...",
-        "last_modified": "..."
-      }
-    ],
-    "id": "...",
-    "team_id": "..."
-  }
-]
+1. Click "Download Project by ID"
+2. Enter the Project ID (you can find this in the Figma URL: `figma.com/file/{project-id}/...`)
+3. Click "Confirm" or press Enter
+4. The extension will fetch all files in that project
+5. Select the files you want to download
+6. Click "Download Selected"
+
+#### Option 2: Download by Team ID
+
+1. Click "Download Projects by Team ID"
+2. Enter the Team ID (you can find this in team settings or project URLs)
+3. Click "Confirm" or press Enter
+4. The extension will fetch all projects and files for that team
+5. Select the files you want to download
+6. Click "Download Selected"
+
+### Download Process
+
+Once you click "Download Selected":
+
+1. **Tab Opening**: Files are opened in new tabs (up to 20 at a time by default)
+2. **Automation**: For each tab:
+   - Waits for the tab to become active
+   - Automatically clicks through Figma menus (File → Save As)
+   - Handles WAF validation if needed
+   - Waits for download to complete
+   - Closes the tab automatically
+3. **Queue Management**: When a tab closes, the next file in queue opens automatically
+4. **Progress Tracking**: Progress bar shows how many files have been opened
+
+## Configuration
+
+### Max Concurrent Tabs
+
+You can modify `MAX_CONCURRENT_TABS` in `background.js` to control how many tabs open simultaneously:
+
+```javascript
+const MAX_CONCURRENT_TABS = 20; // Change this value
 ```
+
+- Lower values (1-5): More controlled, slower but safer
+- Higher values (10-20): Faster but may impact browser performance
+
+## How It Works
+
+### Content Script Automation
+
+The extension automatically:
+1. Clicks the menu toggle button (`#toggle-menu-button`)
+2. Clicks "File" menu (`[id^='mainMenu-file-menu-']`)
+3. Clicks "Save As" (`[id^='mainMenu-save-as-']`)
+4. Watches for and clicks WAF validation button if it appears
+5. Waits for download to complete
+6. Closes the tab
+
+### API Rate Limiting
+
+The extension automatically handles Figma API rate limits:
+- Detects 429 (Too Many Requests) responses
+- Reads `Retry-After` header from response
+- Waits for the specified time
+- Retries the request automatically
+- Shows progress messages during wait
+
+### Tab Management
+
+- Tracks all open Figma tabs
+- Limits concurrent tabs to prevent browser overload
+- Automatically opens next file when a tab closes
+- Monitors download completion to close tabs
 
 ## File Structure
 
-- `manifest.json` - Chrome extension configuration
-- `popup.html` - Main UI
-- `popup.css` - Styling
-- `popup.js` - Extension logic
-- `icon16.png`, `icon48.png`, `icon128.png` - Extension icons (you'll need to add these)
+```
+figma-backup/
+├── manifest.json          # Chrome extension configuration
+├── dashboard.html         # Main dashboard UI
+├── dashboard.css          # Dashboard styling
+├── dashboard.js           # Dashboard logic and API integration
+├── content.js            # Content script for Figma automation
+├── background.js         # Background service worker for tab management
+├── popup.html            # (Legacy - not used)
+├── popup.css             # (Legacy - not used)
+└── popup.js              # (Legacy - not used)
+```
+
+## Permissions
+
+- **tabs**: Required to open and manage tabs
+- **storage**: Required to store API key and project mappings
+- **downloads**: Required to track download completion and close tabs
+- **host_permissions**: Required to access Figma website and API
+
+## Troubleshooting
+
+### API Key Issues
+- Make sure your API key is valid and has proper permissions
+- Check that you're using a Personal Access Token, not OAuth token
+- Verify the API key is saved correctly (try updating it)
+
+### Rate Limiting
+- The extension automatically handles rate limits
+- If you see "Rate limited" messages, the extension will wait and retry
+- For large batches, consider reducing `MAX_CONCURRENT_TABS`
+
+### Tabs Not Closing
+- Ensure downloads are completing successfully
+- Check browser download settings
+- Verify the extension has "downloads" permission
+
+### Automation Not Working
+- Make sure the tab is active/focused (extension only runs on active tabs)
+- Check browser console for error messages
+- Verify you're on a Figma design page (not file browser)
 
 ## Notes
 
-- The extension constructs Figma URLs using the format: `https://www.figma.com/file/{key}/{name}`
-- Files are opened with a 100ms delay between each to avoid overwhelming the browser
-- The extension requires the "tabs" permission to open new tabs
+- The extension constructs Figma URLs using: `https://www.figma.com/design/{key}`
+- Projects are collapsed by default for better organization
+- Use "Select All" button per project to quickly select all files
+- The download button is fixed at the bottom for easy access
+- Progress is tracked in real-time as tabs open
 
+## Version
+
+1.0.0
