@@ -5,12 +5,25 @@ chrome.action.onClicked.addListener((tab) => {
   });
 });
 
-// Track Figma tabs that are waiting for downloads
-const figmaTabsWaitingForDownload = new Set();
+// Tab queue management
+let urlQueue = [];
+let openTabs = new Set(); // Track open tab IDs
+const MAX_CONCURRENT_TABS = 20;
+let totalFiles = 0;
+let openedCount = 0;
 
-// Listen for messages from content script
+// Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'figma-save-initiated') {
+  if (message.type === 'start-download-queue') {
+    urlQueue = message.urls;
+    totalFiles = message.totalFiles;
+    openedCount = 0;
+    openTabs.clear();
+    console.log(`Starting download queue with ${totalFiles} files, max ${MAX_CONCURRENT_TABS} concurrent tabs`);
+    
+    // Start opening tabs (up to the limit)
+    openNextTabs();
+  } else if (message.type === 'figma-save-initiated') {
     // Content script has initiated a save, track this tab
     if (sender.tab && sender.tab.id) {
       figmaTabsWaitingForDownload.add(sender.tab.id);
@@ -18,6 +31,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 });
+
+// Open next tabs from queue (up to the limit)
+function openNextTabs() {
+  while (openTabs.size < MAX_CONCURRENT_TABS && urlQueue.length > 0) {
+    const url = urlQueue.shift();
+    openTab(url);
+  }
+}
+
+// Open a single tab
+function openTab(url) {
+  chrome.tabs.create({ url: url }, (tab) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error opening tab:', chrome.runtime.lastError);
+      openedCount++;
+      notifyProgress();
+      openNextTabs(); // Try next one
+      return;
+    }
+    
+    openTabs.add(tab.id);
+    openedCount++;
+    console.log(`Opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
+    notifyProgress();
+  });
+}
+
+// Notify dashboard of progress
+function notifyProgress() {
+  chrome.runtime.sendMessage({
+    type: 'download-progress',
+    opened: openedCount,
+    total: totalFiles
+  }).catch(() => {
+    // Dashboard might be closed, ignore error
+  });
+}
+
+// Listen for tab close events
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (openTabs.has(tabId)) {
+    openTabs.delete(tabId);
+    console.log(`Tab ${tabId} closed, ${openTabs.size} tabs remaining`);
+    
+    // Open next tab from queue if available
+    if (urlQueue.length > 0) {
+      openNextTabs();
+    } else if (openTabs.size === 0 && openedCount === totalFiles) {
+      // All tabs processed and closed
+      console.log('All tabs processed and closed');
+    }
+  }
+});
+
+// Track Figma tabs that are waiting for downloads
+const figmaTabsWaitingForDownload = new Set();
 
 // Track downloads from Figma tabs and close tabs when downloads complete
 const downloadToTabMap = new Map(); // Map downloadId -> tabId
@@ -57,6 +126,8 @@ chrome.downloads.onChanged.addListener((downloadDelta) => {
           } else {
             console.log('Tab closed successfully');
           }
+          // Remove from openTabs tracking (onRemoved will also fire, but this ensures cleanup)
+          openTabs.delete(tabId);
         });
         // Clean up the map
         downloadToTabMap.delete(downloadId);

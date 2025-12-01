@@ -254,53 +254,61 @@ downloadBtn.addEventListener('click', async () => {
   await chrome.storage.local.set({ fileProjectMap: projectMap });
   console.log('Stored project name mapping:', projectMap);
 
-  // Open each selected URL in a new tab with progress tracking
+  // Get URLs and send to background script for queued opening
   const urls = Array.from(selectedFiles);
   const totalFiles = urls.length;
-  let openedTabs = 0;
 
-  // Update progress
+  // Update progress function
   const updateProgress = (current, total) => {
     const percentage = Math.round((current / total) * 100);
     progressFill.style.width = `${percentage}%`;
     progressText.textContent = `Opening ${current} of ${total} files...`;
   };
 
-  // Open tabs with progress updates
-  urls.forEach((url, index) => {
-    setTimeout(() => {
-      chrome.tabs.create({ url: url }, () => {
-        openedTabs++;
-        updateProgress(openedTabs, totalFiles);
-        
-        // When all tabs are opened, show completion message
-        if (openedTabs === totalFiles) {
-          setTimeout(() => {
-            progressText.textContent = `✓ All ${totalFiles} files opened! Downloads will start automatically.`;
-            progressFill.style.width = '100%';
-            
-            // Reset after a delay
-            setTimeout(() => {
-              // Clear selection after opening
-              selectedFiles.clear();
-              fileProjectMap.clear();
-              document.querySelectorAll('.file-checkbox').forEach(cb => {
-                cb.checked = false;
-              });
-              updateSelectedCount();
-              
-              // Reset button state
-              downloadBtn.disabled = false;
-              btnText.style.display = 'inline';
-              btnLoader.style.display = 'none';
-              downloadProgress.style.display = 'none';
-              progressFill.style.width = '0%';
-            }, 3000);
-          }, 500);
-        }
-      });
-    }, index * 150);
+  // Send URLs to background script for queued processing
+  chrome.runtime.sendMessage({
+    type: 'start-download-queue',
+    urls: urls,
+    totalFiles: totalFiles
   });
+
+  // Listen for progress updates from background script
+  const progressListener = (message) => {
+    if (message.type === 'download-progress') {
+      updateProgress(message.opened, message.total);
+      
+      if (message.opened === message.total) {
+        // All files processed
+        setTimeout(() => {
+          progressText.textContent = `✓ All ${totalFiles} files opened! Downloads will start automatically.`;
+          progressFill.style.width = '100%';
+          
+          // Reset after a delay
+          setTimeout(() => {
+            // Clear selection after opening
+            selectedFiles.clear();
+            fileProjectMap.clear();
+            document.querySelectorAll('.file-checkbox').forEach(cb => {
+              cb.checked = false;
+            });
+            updateSelectedCount();
+            
+            // Reset button state
+            downloadBtn.disabled = false;
+            btnText.style.display = 'inline';
+            btnLoader.style.display = 'none';
+            downloadProgress.style.display = 'none';
+            progressFill.style.width = '0%';
+            
+            // Remove progress listener
+            chrome.runtime.onMessage.removeListener(progressListener);
+          }, 3000);
+        }, 500);
+      }
+    }
+  };
+
+  chrome.runtime.onMessage.addListener(progressListener);
 });
 
 // Utility function to escape HTML
