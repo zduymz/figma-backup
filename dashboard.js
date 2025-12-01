@@ -4,7 +4,6 @@ let selectedFiles = new Set(); // Stores URLs
 let fileProjectMap = new Map(); // Maps URL -> project name
 
 // DOM elements
-const jsonFileInput = document.getElementById('jsonFileInput');
 const dashboard = document.getElementById('dashboard');
 const actions = document.getElementById('actions');
 const downloadBtn = document.getElementById('downloadBtn');
@@ -15,30 +14,326 @@ const progressText = document.getElementById('progressText');
 const btnText = downloadBtn.querySelector('.btn-text');
 const btnLoader = downloadBtn.querySelector('.btn-loader');
 
-// Load JSON file
-jsonFileInput.addEventListener('change', (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+// API setup elements
+const apiSetupSection = document.getElementById('apiSetupSection');
+const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
+const apiKeyInput = document.getElementById('apiKeyInput');
+const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+const apiActions = document.getElementById('apiActions');
+const downloadProjectByIdBtn = document.getElementById('downloadProjectByIdBtn');
+const downloadProjectsByTeamBtn = document.getElementById('downloadProjectsByTeamBtn');
+const updateApiKeyBtn = document.getElementById('updateApiKeyBtn');
+const emptyState = document.getElementById('emptyState');
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      projectsData = JSON.parse(e.target.result);
-      selectedFiles.clear();
-      fileProjectMap.clear();
-      renderDashboard();
-      updateSelectedCount();
-    } catch (error) {
-      alert('Error parsing JSON file: ' + error.message);
+// ID input elements
+const projectIdInputWrapper = document.getElementById('projectIdInputWrapper');
+const projectIdInput = document.getElementById('projectIdInput');
+const confirmProjectIdBtn = document.getElementById('confirmProjectIdBtn');
+const cancelProjectIdBtn = document.getElementById('cancelProjectIdBtn');
+const teamIdInputWrapper = document.getElementById('teamIdInputWrapper');
+const teamIdInput = document.getElementById('teamIdInput');
+const confirmTeamIdBtn = document.getElementById('confirmTeamIdBtn');
+const cancelTeamIdBtn = document.getElementById('cancelTeamIdBtn');
+
+// Check if API key exists on load
+async function checkApiKey() {
+  const result = await chrome.storage.local.get('figmaApiKey');
+  if (result.figmaApiKey) {
+    // API key exists, show fetch button
+    apiKeyInputWrapper.style.display = 'none';
+    apiActions.style.display = 'flex';
+    apiKeyInput.value = result.figmaApiKey; // Store in input for update
+  } else {
+    // No API key, show input
+    apiKeyInputWrapper.style.display = 'flex';
+    apiActions.style.display = 'none';
+  }
+}
+
+// Fetch with rate limit handling (429 retry)
+async function fetchWithRetry(url, options, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(url, options);
+    
+    // If rate limited (429), wait and retry
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('Retry-After');
+      let waitTime = 60; // Default to 60 seconds if no Retry-After header
+      
+      if (retryAfter) {
+        // Retry-After can be in seconds (number) or HTTP date
+        const retryAfterNum = parseInt(retryAfter, 10);
+        if (!isNaN(retryAfterNum)) {
+          waitTime = retryAfterNum;
+        } else {
+          // Try to parse as date
+          const retryDate = new Date(retryAfter);
+          if (!isNaN(retryDate.getTime())) {
+            waitTime = Math.max(1, Math.ceil((retryDate.getTime() - Date.now()) / 1000));
+          }
+        }
+      }
+      
+      console.log(`Rate limited (429). Waiting ${waitTime} seconds before retry (attempt ${attempt + 1}/${maxRetries})...`);
+      
+      // Update empty state to show waiting message
+      if (emptyState) {
+        emptyState.innerHTML = `<p>Rate limited. Waiting ${waitTime} seconds before retrying... (attempt ${attempt + 1}/${maxRetries})</p>`;
+      }
+      
+      // Wait for the specified time
+      await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
+      
+      // Retry the request
+      continue;
     }
-  };
-  reader.readAsText(file);
+    
+    // If not rate limited, return the response
+    return response;
+  }
+  
+  // If we've exhausted retries, throw an error
+  throw new Error('Rate limit exceeded. Maximum retries reached.');
+}
+
+// Save API key
+saveApiKeyBtn.addEventListener('click', async () => {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) {
+    alert('Please enter a Figma API key');
+    return;
+  }
+  
+  await chrome.storage.local.set({ figmaApiKey: apiKey });
+  console.log('API key saved');
+  await checkApiKey();
 });
+
+// Update API key
+updateApiKeyBtn.addEventListener('click', () => {
+  apiKeyInputWrapper.style.display = 'flex';
+  apiActions.style.display = 'none';
+  projectIdInputWrapper.style.display = 'none';
+  teamIdInputWrapper.style.display = 'none';
+  apiKeyInput.value = '';
+  apiKeyInput.focus();
+});
+
+// Show project ID input
+downloadProjectByIdBtn.addEventListener('click', () => {
+  projectIdInputWrapper.style.display = 'flex';
+  teamIdInputWrapper.style.display = 'none';
+  projectIdInput.value = '';
+  projectIdInput.focus();
+});
+
+// Show team ID input
+downloadProjectsByTeamBtn.addEventListener('click', () => {
+  teamIdInputWrapper.style.display = 'flex';
+  projectIdInputWrapper.style.display = 'none';
+  teamIdInput.value = '';
+  teamIdInput.focus();
+});
+
+// Cancel project ID input
+cancelProjectIdBtn.addEventListener('click', () => {
+  projectIdInputWrapper.style.display = 'none';
+  projectIdInput.value = '';
+});
+
+// Cancel team ID input
+cancelTeamIdBtn.addEventListener('click', () => {
+  teamIdInputWrapper.style.display = 'none';
+  teamIdInput.value = '';
+});
+
+// Confirm and fetch by project ID
+confirmProjectIdBtn.addEventListener('click', async () => {
+  const projectId = projectIdInput.value.trim();
+  if (!projectId) {
+    alert('Please enter a Project ID');
+    return;
+  }
+  projectIdInputWrapper.style.display = 'none';
+  await fetchProjectById(projectId);
+});
+
+// Confirm and fetch by team ID
+confirmTeamIdBtn.addEventListener('click', async () => {
+  const teamId = teamIdInput.value.trim();
+  if (!teamId) {
+    alert('Please enter a Team ID');
+    return;
+  }
+  teamIdInputWrapper.style.display = 'none';
+  await fetchProjectsByTeamId(teamId);
+});
+
+// Fetch project by ID
+async function fetchProjectById(projectId) {
+  const result = await chrome.storage.local.get('figmaApiKey');
+  const apiKey = result.figmaApiKey;
+  
+  if (!apiKey) {
+    alert('Please set up your Figma API key first');
+    return;
+  }
+
+  emptyState.innerHTML = '<p>Fetching project and files...</p>';
+  emptyState.style.display = 'block';
+
+  try {
+    // Fetch files for the project with rate limit handling
+    const filesResponse = await fetchWithRetry(`https://api.figma.com/v1/projects/${projectId}/files`, {
+      headers: {
+        'X-Figma-Token': apiKey
+      }
+    });
+
+    if (!filesResponse.ok) {
+      const errorData = await filesResponse.json().catch(() => ({}));
+      throw new Error(errorData.err || `Failed to fetch project: ${filesResponse.statusText}`);
+    }
+
+    const filesData = await filesResponse.json();
+    const files = filesData.files || [];
+
+    // Get project name (we need to get it from team projects or use a default)
+    const projectName = `Project ${projectId}`;
+    
+    // Try to get project details
+    try {
+      // We need team ID to get project name, but we can try to infer from files
+      // For now, use a generic name
+    } catch (e) {
+      // Ignore
+    }
+
+    projectsData = [{
+      name: projectName,
+      id: projectId,
+      files: files
+    }];
+
+    selectedFiles.clear();
+    fileProjectMap.clear();
+    renderDashboard();
+    updateSelectedCount();
+    
+    emptyState.style.display = 'none';
+    actions.style.display = 'flex';
+
+  } catch (error) {
+    console.error('Error fetching project:', error);
+    alert('Error fetching project: ' + error.message);
+    emptyState.innerHTML = '<p>Error fetching project. Please check the Project ID and try again.</p>';
+  }
+}
+
+// Fetch projects by team ID
+async function fetchProjectsByTeamId(teamId) {
+  const result = await chrome.storage.local.get('figmaApiKey');
+  const apiKey = result.figmaApiKey;
+  
+  if (!apiKey) {
+    alert('Please set up your Figma API key first');
+    return;
+  }
+
+  emptyState.innerHTML = '<p>Fetching projects and files...</p>';
+  emptyState.style.display = 'block';
+
+  try {
+    // Fetch projects for the team with rate limit handling
+    const projectsResponse = await fetchWithRetry(`https://api.figma.com/v1/teams/${teamId}/projects`, {
+      headers: {
+        'X-Figma-Token': apiKey
+      }
+    });
+
+    if (!projectsResponse.ok) {
+      const errorData = await projectsResponse.json().catch(() => ({}));
+      throw new Error(errorData.err || `Failed to fetch projects: ${projectsResponse.statusText}`);
+    }
+
+    const projectsResponseData = await projectsResponse.json();
+    const projects = projectsResponseData.projects || [];
+
+    if (projects.length === 0) {
+      throw new Error('No projects found for this team');
+    }
+
+    // Fetch files for each project
+    const allProjects = [];
+    
+    for (const project of projects) {
+      try {
+        // Update status for each project
+        emptyState.innerHTML = `<p>Fetching files for project: ${project.name}...</p>`;
+        
+        const filesResponse = await fetchWithRetry(`https://api.figma.com/v1/projects/${project.id}/files`, {
+          headers: {
+            'X-Figma-Token': apiKey
+          }
+        });
+
+        if (filesResponse.ok) {
+          const filesData = await filesResponse.json();
+          allProjects.push({
+            name: project.name,
+            id: project.id,
+            team_id: teamId,
+            files: filesData.files || []
+          });
+        } else {
+          console.error(`Failed to fetch files for project ${project.name}: ${filesResponse.statusText}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching files for project ${project.name}:`, error);
+      }
+    }
+
+    if (allProjects.length === 0) {
+      throw new Error('No files found in any projects');
+    }
+
+    projectsData = allProjects;
+    selectedFiles.clear();
+    fileProjectMap.clear();
+    renderDashboard();
+    updateSelectedCount();
+    
+    emptyState.style.display = 'none';
+    actions.style.display = 'flex';
+
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    alert('Error fetching projects: ' + error.message);
+    emptyState.innerHTML = '<p>Error fetching projects. Please check the Team ID and try again.</p>';
+  }
+}
+
+
+// Allow Enter key to confirm in input fields
+projectIdInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    confirmProjectIdBtn.click();
+  }
+});
+
+teamIdInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    confirmTeamIdBtn.click();
+  }
+});
+
+// Initialize on load
+checkApiKey();
 
 // Render dashboard with projects and files
 function renderDashboard() {
   if (!projectsData || projectsData.length === 0) {
-    dashboard.innerHTML = '<div class="empty-state"><p>No projects found in the JSON file</p></div>';
+    dashboard.innerHTML = '<div class="empty-state"><p>No projects found. Please fetch projects from Figma API.</p></div>';
     actions.style.display = 'none';
     return;
   }
@@ -317,4 +612,5 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
 

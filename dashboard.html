@@ -10,15 +10,34 @@
   <div class="container">
     <header>
       <h1>Figma Backup Dashboard</h1>
-      <div class="file-input-wrapper">
-        <input type="file" id="jsonFileInput" accept=".json" />
-        <label for="jsonFileInput" class="file-input-label">Load JSON File</label>
+      <div class="api-setup-section" id="apiSetupSection">
+        <div class="api-key-input-wrapper" id="apiKeyInputWrapper">
+          <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter Figma API Key" />
+          <button id="saveApiKeyBtn" class="save-api-key-btn">Save API Key</button>
+          <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" class="api-key-help-link" title="Get your API key">?</a>
+        </div>
+        <div class="api-actions" id="apiActions" style="display: none;">
+          <button id="downloadProjectByIdBtn" class="action-btn">Download Project by ID</button>
+          <button id="downloadProjectsByTeamBtn" class="action-btn">Download Projects by Team ID</button>
+          <button id="updateApiKeyBtn" class="update-api-key-btn">Update API Key</button>
+        </div>
+        <!-- Input boxes for IDs -->
+        <div class="id-input-wrapper" id="projectIdInputWrapper" style="display: none;">
+          <input type="text" id="projectIdInput" class="id-input" placeholder="Enter Project ID" />
+          <button id="confirmProjectIdBtn" class="confirm-btn">Confirm</button>
+          <button id="cancelProjectIdBtn" class="cancel-btn">Cancel</button>
+        </div>
+        <div class="id-input-wrapper" id="teamIdInputWrapper" style="display: none;">
+          <input type="text" id="teamIdInput" class="id-input" placeholder="Enter Team ID" />
+          <button id="confirmTeamIdBtn" class="confirm-btn">Confirm</button>
+          <button id="cancelTeamIdBtn" class="cancel-btn">Cancel</button>
+        </div>
       </div>
     </header>
     
     <div class="dashboard" id="dashboard">
-      <div class="empty-state">
-        <p>Please load a JSON file to view projects and files</p>
+      <div class="empty-state" id="emptyState">
+        <p>Please set up your Figma API key and download projects by ID or team ID</p>
       </div>
     </div>
     
