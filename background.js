@@ -33,28 +33,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Open next tabs from queue (up to the limit)
-function openNextTabs() {
-  while (openTabs.size < MAX_CONCURRENT_TABS && urlQueue.length > 0) {
+async function openNextTabs() {
+  // Calculate how many tabs we can still open
+  const tabsToOpen = Math.min(MAX_CONCURRENT_TABS - openTabs.size, urlQueue.length);
+  
+  for (let i = 0; i < tabsToOpen; i++) {
+    // Double-check we're still under the limit before opening
+    if (openTabs.size >= MAX_CONCURRENT_TABS) {
+      console.log(`Reached max concurrent tabs (${MAX_CONCURRENT_TABS}), stopping`);
+      break;
+    }
+    
+    if (urlQueue.length === 0) {
+      break;
+    }
+    
     const url = urlQueue.shift();
-    openTab(url);
+    await openTab(url);
   }
 }
 
-// Open a single tab
+// Open a single tab (returns a promise)
 function openTab(url) {
-  chrome.tabs.create({ url: url }, (tab) => {
-    if (chrome.runtime.lastError) {
-      console.error('Error opening tab:', chrome.runtime.lastError);
+  return new Promise((resolve) => {
+    chrome.tabs.create({ url: url }, (tab) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error opening tab:', chrome.runtime.lastError);
+        openedCount++;
+        notifyProgress();
+        resolve(); // Resolve to continue with next tab
+        return;
+      }
+      
+      openTabs.add(tab.id);
       openedCount++;
+      console.log(`Opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
       notifyProgress();
-      openNextTabs(); // Try next one
-      return;
-    }
-    
-    openTabs.add(tab.id);
-    openedCount++;
-    console.log(`Opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
-    notifyProgress();
+      resolve(); // Resolve after tab is created and tracked
+    });
   });
 }
 
