@@ -12,6 +12,11 @@ const MAX_CONCURRENT_TABS = 10;
 let totalFiles = 0;
 let openedCount = 0;
 
+// Track tab states and timestamps
+const tabStates = new Map(); // Map tabId -> { state: 'opened'|'processing'|'completed', openedAt: timestamp, lastActivity: timestamp }
+const TAB_TIMEOUT = 5 * 60 * 1000; // 5 minutes timeout for stuck tabs
+const STUCK_CHECK_INTERVAL = 30 * 1000; // Check for stuck tabs every 30 seconds
+
 // Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'start-download-queue') {
@@ -27,7 +32,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Content script has initiated a save, track this tab
     if (sender.tab && sender.tab.id) {
       figmaTabsWaitingForDownload.add(sender.tab.id);
+      // Update tab state to processing
+      if (tabStates.has(sender.tab.id)) {
+        tabStates.set(sender.tab.id, {
+          ...tabStates.get(sender.tab.id),
+          state: 'processing',
+          lastActivity: Date.now()
+        });
+      }
       console.log('Tracking Figma tab for download:', sender.tab.id);
+    }
+  } else if (message.type === 'content-script-ready') {
+    // Content script has loaded and is ready
+    if (sender.tab && sender.tab.id) {
+      if (tabStates.has(sender.tab.id)) {
+        tabStates.set(sender.tab.id, {
+          ...tabStates.get(sender.tab.id),
+          lastActivity: Date.now()
+        });
+      }
+      console.log('Content script ready for tab:', sender.tab.id);
     }
   }
 });
@@ -67,6 +91,15 @@ function openTab(url) {
       
       openTabs.add(tab.id);
       openedCount++;
+      
+      // Track tab state
+      tabStates.set(tab.id, {
+        state: 'opened',
+        openedAt: Date.now(),
+        lastActivity: Date.now(),
+        url: url
+      });
+      
       console.log(`Opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
       notifyProgress();
       resolve(); // Resolve after tab is created and tracked
@@ -89,6 +122,8 @@ function notifyProgress() {
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (openTabs.has(tabId)) {
     openTabs.delete(tabId);
+    tabStates.delete(tabId);
+    figmaTabsWaitingForDownload.delete(tabId);
     console.log(`Tab ${tabId} closed, ${openTabs.size} tabs remaining`);
     
     // Open next tab from queue if available
@@ -100,6 +135,79 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     }
   }
 });
+
+// Listen for tab updates (refresh, navigation, etc.)
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (!openTabs.has(tabId)) return;
+  
+  // If tab is being refreshed or navigated
+  if (changeInfo.status === 'loading' && tabStates.has(tabId)) {
+    const tabState = tabStates.get(tabId);
+    // If tab was processing and now reloading, it might be stuck
+    if (tabState.state === 'processing') {
+      console.log(`Tab ${tabId} is reloading while processing, may be stuck`);
+      // Reset state to opened so timeout can catch it
+      tabStates.set(tabId, {
+        ...tabState,
+        state: 'opened',
+        lastActivity: Date.now()
+      });
+    }
+  }
+  
+  // Update last activity when tab completes loading
+  if (changeInfo.status === 'complete' && tabStates.has(tabId)) {
+    const tabState = tabStates.get(tabId);
+    tabStates.set(tabId, {
+      ...tabState,
+      lastActivity: Date.now()
+    });
+  }
+});
+
+// Check for stuck tabs periodically
+function checkStuckTabs() {
+  const now = Date.now();
+  const stuckTabs = [];
+  
+  for (const [tabId, tabState] of tabStates.entries()) {
+    const timeSinceActivity = now - tabState.lastActivity;
+    const timeSinceOpened = now - tabState.openedAt;
+    
+    // Consider a tab stuck if:
+    // 1. It's been open for more than TAB_TIMEOUT
+    // 2. No activity for more than TAB_TIMEOUT
+    // 3. It's in 'opened' state for too long (content script never started)
+    if (timeSinceOpened > TAB_TIMEOUT || 
+        (timeSinceActivity > TAB_TIMEOUT && tabState.state !== 'completed')) {
+      stuckTabs.push({ tabId, tabState, reason: timeSinceOpened > TAB_TIMEOUT ? 'timeout' : 'no_activity' });
+    }
+  }
+  
+  // Close stuck tabs and open next ones
+  for (const { tabId, tabState, reason } of stuckTabs) {
+    console.log(`Tab ${tabId} is stuck (${reason}), closing and opening next...`);
+    chrome.tabs.remove(tabId, () => {
+      if (chrome.runtime.lastError) {
+        console.log(`Tab ${tabId} already closed:`, chrome.runtime.lastError.message);
+      } else {
+        console.log(`Force closed stuck tab ${tabId}`);
+      }
+      // Cleanup
+      openTabs.delete(tabId);
+      tabStates.delete(tabId);
+      figmaTabsWaitingForDownload.delete(tabId);
+      
+      // Open next tab from queue
+      if (urlQueue.length > 0) {
+        openNextTabs();
+      }
+    });
+  }
+}
+
+// Start periodic check for stuck tabs
+setInterval(checkStuckTabs, STUCK_CHECK_INTERVAL);
 
 // Track Figma tabs that are waiting for downloads
 const figmaTabsWaitingForDownload = new Set();
@@ -134,19 +242,30 @@ chrome.downloads.onChanged.addListener((downloadDelta) => {
     
     if (tabId) {
       console.log('Download completed, closing tab:', tabId);
+      
+      // Mark tab as completed
+      if (tabStates.has(tabId)) {
+        tabStates.set(tabId, {
+          ...tabStates.get(tabId),
+          state: 'completed',
+          lastActivity: Date.now()
+        });
+      }
+      
       // Wait a moment before closing to ensure download is fully saved
       setTimeout(() => {
         chrome.tabs.remove(tabId, () => {
           if (chrome.runtime.lastError) {
             console.log('Tab already closed or error:', chrome.runtime.lastError.message);
+            // Still clean up even if already closed
+            openTabs.delete(tabId);
+            tabStates.delete(tabId);
           } else {
             console.log('Tab closed successfully');
           }
-          // Remove from openTabs tracking (onRemoved will also fire, but this ensures cleanup)
-          openTabs.delete(tabId);
+          // Clean up the map
+          downloadToTabMap.delete(downloadId);
         });
-        // Clean up the map
-        downloadToTabMap.delete(downloadId);
       }, 1000);
     }
   }

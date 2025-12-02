@@ -2,6 +2,13 @@
 (function() {
   console.log('Figma Backup Content Script loaded!', window.location.href);
   
+  // Notify background script that content script is ready
+  try {
+    chrome.runtime.sendMessage({ type: 'content-script-ready' });
+  } catch (e) {
+    // Ignore if background script not available
+  }
+  
   // Check if we're on the WAF validation page
   function isWAFValidationPage() {
     return window.location.href.includes('figma.com/waf-validation-captcha');
