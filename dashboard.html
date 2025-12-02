@@ -10,6 +10,12 @@
   <div class="container">
     <header>
       <h1>Figma Backup Dashboard</h1>
+      <div class="mode-switcher">
+        <label class="toggle-switch" title="Toggle between API Mode and JSON File Mode">
+          <input type="checkbox" id="modeToggle" />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       <div class="api-setup-section" id="apiSetupSection">
         <div class="api-key-input-wrapper" id="apiKeyInputWrapper">
           <input type="password" id="apiKeyInput" class="api-key-input" placeholder="Enter Figma API Key" />
@@ -31,6 +37,12 @@
           <input type="text" id="teamIdInput" class="id-input" placeholder="Enter Team ID" />
           <button id="confirmTeamIdBtn" class="confirm-btn">Confirm</button>
           <button id="cancelTeamIdBtn" class="cancel-btn">Cancel</button>
+        </div>
+      </div>
+      <div class="json-file-section" id="jsonFileSection" style="display: none;">
+        <div class="file-input-wrapper">
+          <input type="file" id="jsonFileInput" accept=".json" />
+          <label for="jsonFileInput" class="file-input-label">Load JSON File</label>
         </div>
       </div>
     </header>

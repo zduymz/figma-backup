@@ -8,7 +8,7 @@ chrome.action.onClicked.addListener((tab) => {
 // Tab queue management
 let urlQueue = [];
 let openTabs = new Set(); // Track open tab IDs
-const MAX_CONCURRENT_TABS = 20;
+const MAX_CONCURRENT_TABS = 10;
 let totalFiles = 0;
 let openedCount = 0;
 

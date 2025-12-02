@@ -15,7 +15,6 @@ const btnText = downloadBtn.querySelector('.btn-text');
 const btnLoader = downloadBtn.querySelector('.btn-loader');
 
 // API setup elements
-const apiSetupSection = document.getElementById('apiSetupSection');
 const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
@@ -34,6 +33,12 @@ const teamIdInputWrapper = document.getElementById('teamIdInputWrapper');
 const teamIdInput = document.getElementById('teamIdInput');
 const confirmTeamIdBtn = document.getElementById('confirmTeamIdBtn');
 const cancelTeamIdBtn = document.getElementById('cancelTeamIdBtn');
+
+// Mode switcher elements
+const modeToggle = document.getElementById('modeToggle');
+const apiSetupSection = document.getElementById('apiSetupSection');
+const jsonFileSection = document.getElementById('jsonFileSection');
+const jsonFileInput = document.getElementById('jsonFileInput');
 
 // Check if API key exists on load
 async function checkApiKey() {
@@ -327,8 +332,67 @@ teamIdInput.addEventListener('keypress', (e) => {
   }
 });
 
+// Mode switching
+let isApiMode = true; // true = API mode, false = JSON file mode
+
+modeToggle.addEventListener('change', (e) => {
+  isApiMode = !e.target.checked; // When checked, it's JSON mode
+  switchMode(isApiMode);
+});
+
+function switchMode(apiMode) {
+  // Hide all input boxes when switching modes
+  projectIdInputWrapper.style.display = 'none';
+  teamIdInputWrapper.style.display = 'none';
+  projectIdInput.value = '';
+  teamIdInput.value = '';
+  
+  if (apiMode) {
+    // Show API mode UI
+    apiSetupSection.style.display = 'block';
+    jsonFileSection.style.display = 'none';
+    emptyState.innerHTML = '<p>Please set up your Figma API key and download projects by ID or team ID</p>';
+    emptyState.style.display = 'block';
+    actions.style.display = 'none';
+  } else {
+    // Show JSON file mode UI
+    apiSetupSection.style.display = 'none';
+    jsonFileSection.style.display = 'block';
+    emptyState.innerHTML = '<p>Please load a JSON file to view projects and files</p>';
+    emptyState.style.display = 'block';
+    actions.style.display = 'none';
+    // Clear any existing data
+    projectsData = [];
+    selectedFiles.clear();
+    fileProjectMap.clear();
+    renderDashboard();
+    updateSelectedCount();
+  }
+}
+
+// Load JSON file (Mode 2)
+jsonFileInput.addEventListener('change', (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      projectsData = JSON.parse(e.target.result);
+      selectedFiles.clear();
+      fileProjectMap.clear();
+      renderDashboard();
+      updateSelectedCount();
+    } catch (error) {
+      alert('Error parsing JSON file: ' + error.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
 // Initialize on load
 checkApiKey();
+switchMode(true); // Start in API mode
 
 // Render dashboard with projects and files
 function renderDashboard() {
