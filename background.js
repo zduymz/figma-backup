@@ -240,17 +240,49 @@ function checkStuckTabs() {
   const now = Date.now();
   const stuckTabs = [];
   
+  // Get all tabs that have active downloads
+  const tabsWithActiveDownloads = new Set();
+  for (const tabId of downloadToTabMap.values()) {
+    tabsWithActiveDownloads.add(tabId);
+  }
+  
   for (const [tabId, tabState] of tabStates.entries()) {
+    // NEVER close tabs that have active downloads
+    if (tabsWithActiveDownloads.has(tabId)) {
+      console.log(`Tab ${tabId} has active download, skipping stuck check`);
+      continue;
+    }
+    
+    // NEVER close tabs that are waiting for downloads (they're in the process)
+    if (figmaTabsWaitingForDownload.has(tabId)) {
+      console.log(`Tab ${tabId} is waiting for download, skipping stuck check`);
+      continue;
+    }
+    
     const timeSinceActivity = now - tabState.lastActivity;
     const timeSinceOpened = now - tabState.openedAt;
     
-    // Consider a tab stuck if:
-    // 1. It's been open for more than TAB_TIMEOUT
-    // 2. No activity for more than TAB_TIMEOUT
-    // 3. It's in 'opened' state for too long (content script never started)
-    if (timeSinceOpened > TAB_TIMEOUT || 
-        (timeSinceActivity > TAB_TIMEOUT && tabState.state !== 'completed')) {
-      stuckTabs.push({ tabId, tabState, reason: timeSinceOpened > TAB_TIMEOUT ? 'timeout' : 'no_activity' });
+    // Different timeout logic based on state:
+    // - 'opened': Tab opened but content script never started (shorter timeout)
+    // - 'processing': Tab clicked save, waiting for download dialog (longer timeout)
+    // - 'completed': Should already be closed, but if not, can close immediately
+    
+    if (tabState.state === 'completed') {
+      // Completed tabs should have been closed, but if they're still here, close them
+      stuckTabs.push({ tabId, tabState, reason: 'completed_but_not_closed' });
+    } else if (tabState.state === 'opened') {
+      // Tab opened but content script never started - give it 3 minutes
+      const OPENED_STATE_TIMEOUT = 3 * 60 * 1000; // 3 minutes
+      if (timeSinceOpened > OPENED_STATE_TIMEOUT) {
+        stuckTabs.push({ tabId, tabState, reason: 'opened_state_timeout' });
+      }
+    } else if (tabState.state === 'processing') {
+      // Tab is processing (clicked save, waiting for download) - give it more time
+      // Downloads can take a while to start, especially with large files
+      const PROCESSING_STATE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+      if (timeSinceActivity > PROCESSING_STATE_TIMEOUT) {
+        stuckTabs.push({ tabId, tabState, reason: 'processing_timeout' });
+      }
     }
   }
   
@@ -267,6 +299,13 @@ function checkStuckTabs() {
       openTabs.delete(tabId);
       tabStates.delete(tabId);
       figmaTabsWaitingForDownload.delete(tabId);
+      
+      // Remove from download map if present
+      for (const [downloadId, mappedTabId] of downloadToTabMap.entries()) {
+        if (mappedTabId === tabId) {
+          downloadToTabMap.delete(downloadId);
+        }
+      }
       
       // Open next tab from queue
       if (urlQueue.length > 0) {
@@ -297,6 +336,17 @@ chrome.downloads.onCreated.addListener((downloadItem) => {
       if (figmaTabsWaitingForDownload.has(tab.id)) {
         downloadToTabMap.set(downloadItem.id, tab.id);
         figmaTabsWaitingForDownload.delete(tab.id);
+        
+        // Update tab activity since download started
+        if (tabStates.has(tab.id)) {
+          const tabState = tabStates.get(tab.id);
+          tabStates.set(tab.id, {
+            ...tabState,
+            lastActivity: Date.now(),
+            state: 'processing' // Keep as processing until download completes
+          });
+        }
+        
         console.log('Matched download to Figma tab:', tab.id, downloadItem.filename);
         break;
       }
