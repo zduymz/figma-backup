@@ -639,15 +639,42 @@ downloadBtn.addEventListener('click', async () => {
   };
 
   // Send URLs to background script for queued processing
-  chrome.runtime.sendMessage({
-    type: 'start-download-queue',
-    urls: urls,
-    totalFiles: totalFiles
-  });
+  console.log('Sending download queue message:', { urls: urls.length, totalFiles });
+  
+  try {
+    chrome.runtime.sendMessage({
+      type: 'start-download-queue',
+      urls: urls,
+      totalFiles: totalFiles
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error sending message to background script:', chrome.runtime.lastError);
+        alert('Error starting download: ' + chrome.runtime.lastError.message);
+        // Reset button state on error
+        downloadBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnLoader.style.display = 'none';
+        downloadProgress.style.display = 'none';
+        return;
+      }
+      console.log('Message sent successfully, response:', response);
+    });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    alert('Error starting download: ' + error.message);
+    downloadBtn.disabled = false;
+    btnText.style.display = 'inline';
+    btnLoader.style.display = 'none';
+    downloadProgress.style.display = 'none';
+    return;
+  }
 
   // Listen for progress updates from background script
-  const progressListener = (message) => {
+  const progressListener = (message, sender, sendResponse) => {
+    console.log('Received message in dashboard:', message);
+    
     if (message.type === 'download-progress') {
+      console.log(`Progress update: ${message.opened}/${message.total}`);
       updateProgress(message.opened, message.total);
       
       if (message.opened === message.total) {
@@ -671,9 +698,48 @@ downloadBtn.addEventListener('click', async () => {
         }, 500);
       }
     }
+    
+    return true; // Keep message channel open for async response
   };
 
   chrome.runtime.onMessage.addListener(progressListener);
+  
+  // Track opened count locally for timeout check
+  let localOpenedCount = 0;
+  
+  // Add timeout to detect if tabs aren't opening
+  const timeoutId = setTimeout(() => {
+    chrome.runtime.sendMessage({ type: 'ping' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Background script not responding:', chrome.runtime.lastError);
+        alert('Background script error. Please reload the extension and try again.');
+        // Reset button state
+        downloadBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnLoader.style.display = 'none';
+        downloadProgress.style.display = 'none';
+      } else {
+        console.log('Background script status:', response);
+        if (response && response.openTabs === 0 && response.queueLength > 0) {
+          console.warn('Background script reports no tabs opened but queue has items');
+          alert('Tabs are not opening. Please check the browser console for errors.');
+        }
+      }
+    });
+  }, 5000);
+  
+  // Clear timeout if progress updates come in
+  const originalProgressListener = progressListener;
+  const wrappedProgressListener = (message, sender, sendResponse) => {
+    if (message.type === 'download-progress') {
+      localOpenedCount = message.opened;
+      clearTimeout(timeoutId);
+    }
+    return originalProgressListener(message, sender, sendResponse);
+  };
+  
+  chrome.runtime.onMessage.removeListener(progressListener);
+  chrome.runtime.onMessage.addListener(wrappedProgressListener);
 });
 
 // Utility function to escape HTML

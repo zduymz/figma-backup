@@ -19,15 +19,41 @@ const STUCK_CHECK_INTERVAL = 30 * 1000; // Check for stuck tabs every 30 seconds
 
 // Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Background script received message:', message.type, message);
+  
   if (message.type === 'start-download-queue') {
+    console.log('Processing start-download-queue message');
+    console.log('URLs received:', message.urls?.length || 0);
+    console.log('Total files:', message.totalFiles);
+    
+    if (!message.urls || message.urls.length === 0) {
+      console.error('No URLs provided in start-download-queue message');
+      sendResponse({ error: 'No URLs provided' });
+      return;
+    }
+    
     urlQueue = message.urls;
     totalFiles = message.totalFiles;
     openedCount = 0;
     openTabs.clear();
+    tabStates.clear();
+    figmaTabsWaitingForDownload.clear();
+    downloadToTabMap.clear();
+    
     console.log(`Starting download queue with ${totalFiles} files, max ${MAX_CONCURRENT_TABS} concurrent tabs`);
+    console.log('URL queue:', urlQueue);
     
     // Start opening tabs (up to the limit)
-    openNextTabs();
+    openNextTabs().catch(error => {
+      console.error('Error in openNextTabs:', error);
+    });
+    
+    sendResponse({ success: true, message: 'Queue started' });
+    return true; // Keep channel open for async response
+  } else if (message.type === 'ping') {
+    console.log('Ping received, background script is alive');
+    sendResponse({ status: 'alive', openTabs: openTabs.size, queueLength: urlQueue.length });
+    return true;
   } else if (message.type === 'figma-save-initiated') {
     // Content script has initiated a save, track this tab
     if (sender.tab && sender.tab.id) {
@@ -58,8 +84,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Open next tabs from queue (up to the limit)
 async function openNextTabs() {
+  console.log('openNextTabs called:', {
+    openTabs: openTabs.size,
+    maxTabs: MAX_CONCURRENT_TABS,
+    queueLength: urlQueue.length
+  });
+  
   // Calculate how many tabs we can still open
   const tabsToOpen = Math.min(MAX_CONCURRENT_TABS - openTabs.size, urlQueue.length);
+  console.log(`Can open ${tabsToOpen} tabs`);
+  
+  if (tabsToOpen === 0) {
+    console.log('Cannot open more tabs - either at limit or queue is empty');
+    return;
+  }
   
   for (let i = 0; i < tabsToOpen; i++) {
     // Double-check we're still under the limit before opening
@@ -69,23 +107,44 @@ async function openNextTabs() {
     }
     
     if (urlQueue.length === 0) {
+      console.log('Queue is empty, stopping');
       break;
     }
     
     const url = urlQueue.shift();
-    await openTab(url);
+    console.log(`Opening tab ${i + 1}/${tabsToOpen}: ${url}`);
+    
+    try {
+      await openTab(url);
+    } catch (error) {
+      console.error(`Error opening tab for URL ${url}:`, error);
+      // Continue with next tab even if this one fails
+    }
   }
+  
+  console.log(`Finished opening tabs. Open tabs: ${openTabs.size}, Queue remaining: ${urlQueue.length}`);
 }
 
 // Open a single tab (returns a promise)
 function openTab(url) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    console.log(`Attempting to open tab with URL: ${url}`);
+    
     chrome.tabs.create({ url: url }, (tab) => {
       if (chrome.runtime.lastError) {
-        console.error('Error opening tab:', chrome.runtime.lastError);
+        const error = chrome.runtime.lastError.message;
+        console.error('Error opening tab:', error);
         openedCount++;
         notifyProgress();
-        resolve(); // Resolve to continue with next tab
+        reject(new Error(error)); // Reject to handle error
+        return;
+      }
+      
+      if (!tab || !tab.id) {
+        console.error('Tab created but no tab ID returned');
+        openedCount++;
+        notifyProgress();
+        reject(new Error('No tab ID returned'));
         return;
       }
       
@@ -100,22 +159,31 @@ function openTab(url) {
         url: url
       });
       
-      console.log(`Opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
+      console.log(`✓ Successfully opened tab ${tab.id} (${openedCount}/${totalFiles}), ${openTabs.size} tabs open`);
       notifyProgress();
-      resolve(); // Resolve after tab is created and tracked
+      resolve(tab); // Resolve after tab is created and tracked
     });
   });
 }
 
 // Notify dashboard of progress
 function notifyProgress() {
-  chrome.runtime.sendMessage({
-    type: 'download-progress',
-    opened: openedCount,
-    total: totalFiles
-  }).catch(() => {
-    // Dashboard might be closed, ignore error
-  });
+  console.log(`Notifying progress: ${openedCount}/${totalFiles}`);
+  try {
+    chrome.runtime.sendMessage({
+      type: 'download-progress',
+      opened: openedCount,
+      total: totalFiles
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error sending progress update:', chrome.runtime.lastError);
+      } else {
+        console.log('Progress update sent successfully');
+      }
+    });
+  } catch (error) {
+    console.error('Exception in notifyProgress:', error);
+  }
 }
 
 // Listen for tab close events
