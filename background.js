@@ -170,17 +170,19 @@ function openTab(url) {
 function notifyProgress() {
   console.log(`Notifying progress: ${openedCount}/${totalFiles}`);
   try {
+    // Send message without callback - we're just broadcasting progress updates
+    // No response is expected from the dashboard
     chrome.runtime.sendMessage({
       type: 'download-progress',
       opened: openedCount,
       total: totalFiles
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error sending progress update:', chrome.runtime.lastError);
-      } else {
-        console.log('Progress update sent successfully');
-      }
     });
+    
+    // Check for errors after sending (but don't use callback)
+    if (chrome.runtime.lastError) {
+      // Dashboard might be closed, this is expected and can be ignored
+      console.log('Note: Dashboard may not be listening:', chrome.runtime.lastError.message);
+    }
   } catch (error) {
     console.error('Exception in notifyProgress:', error);
   }

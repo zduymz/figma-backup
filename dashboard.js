@@ -699,7 +699,8 @@ downloadBtn.addEventListener('click', async () => {
       }
     }
     
-    return true; // Keep message channel open for async response
+    // No response needed - just receiving progress updates
+    // Don't return true since we're not sending an async response
   };
 
   chrome.runtime.onMessage.addListener(progressListener);
