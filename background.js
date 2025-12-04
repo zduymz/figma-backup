@@ -17,6 +17,87 @@ const tabStates = new Map(); // Map tabId -> { state: 'opened'|'processing'|'com
 const TAB_TIMEOUT = 5 * 60 * 1000; // 5 minutes timeout for stuck tabs
 const STUCK_CHECK_INTERVAL = 30 * 1000; // Check for stuck tabs every 30 seconds
 
+// Keep-alive mechanism to prevent service worker from going inactive
+const KEEP_ALIVE_INTERVAL = 20 * 1000; // 20 seconds (before 30s timeout)
+let keepAliveInterval = null;
+
+function startKeepAlive() {
+  if (keepAliveInterval) {
+    console.log('Keep-alive already running');
+    return; // Already running
+  }
+  
+  console.log('Starting keep-alive mechanism to prevent service worker from going inactive');
+  
+  // Use setInterval with chrome.storage operations to keep service worker alive
+  // This is more reliable than alarms for short intervals
+  keepAliveInterval = setInterval(() => {
+    // Check if we still have active operations
+    const hasActiveOperations = urlQueue.length > 0 || openTabs.size > 0 || 
+                                 figmaTabsWaitingForDownload.size > 0 || 
+                                 downloadToTabMap.size > 0;
+    
+    if (!hasActiveOperations) {
+      // No active operations, stop keep-alive
+      console.log('No active operations, stopping keep-alive');
+      stopKeepAlive();
+      return;
+    }
+    
+    // Do a lightweight operation to keep service worker alive
+    // Using chrome.storage.local.get() is a good way to keep the service worker active
+    chrome.storage.local.get('keepAlive', () => {
+      if (chrome.runtime.lastError) {
+        // Ignore errors, just keeping service worker alive
+      }
+      // Service worker stays active as long as there are pending callbacks
+    });
+    
+    // Also use chrome.alarms as a backup (minimum 1 minute)
+    try {
+      chrome.alarms.create('keepAlive', { periodInMinutes: 1 });
+    } catch (e) {
+      // Ignore if already exists
+    }
+  }, KEEP_ALIVE_INTERVAL);
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log('Stopped keep-alive interval');
+  }
+  
+  try {
+    chrome.alarms.clear('keepAlive');
+    console.log('Cleared keep-alive alarm');
+  } catch (e) {
+    // Ignore if alarm doesn't exist
+  }
+}
+
+// Listen for alarm as a backup (fires every minute)
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'keepAlive') {
+    // Check if we still have active operations
+    const hasActiveOperations = urlQueue.length > 0 || openTabs.size > 0 || 
+                                 figmaTabsWaitingForDownload.size > 0 || 
+                                 downloadToTabMap.size > 0;
+    
+    if (!hasActiveOperations) {
+      // No active operations, stop keep-alive
+      console.log('No active operations detected by alarm, stopping keep-alive');
+      stopKeepAlive();
+    } else {
+      // Do a lightweight operation to keep service worker active
+      chrome.storage.local.get('keepAlive', () => {
+        // Ignore result, just keeping service worker alive
+      });
+    }
+  }
+});
+
 // Listen for messages
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message.type, message);
@@ -43,6 +124,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log(`Starting download queue with ${totalFiles} files, max ${MAX_CONCURRENT_TABS} concurrent tabs`);
     console.log('URL queue:', urlQueue);
     
+    // Start keep-alive to prevent service worker from going inactive
+    startKeepAlive();
+    
     // Start opening tabs (up to the limit)
     openNextTabs().catch(error => {
       console.error('Error in openNextTabs:', error);
@@ -66,7 +150,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           lastActivity: Date.now()
         });
       }
-      console.log('Tracking Figma tab for download:', sender.tab.id);
+      console.log('Tracking Figma tab for download:', sender.tab.id, 'Title:', sender.tab.title || '[unknown title]');
     }
   } else if (message.type === 'content-script-ready') {
     // Content script has loaded and is ready
@@ -202,6 +286,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     } else if (openTabs.size === 0 && openedCount === totalFiles) {
       // All tabs processed and closed
       console.log('All tabs processed and closed');
+      // Stop keep-alive since all operations are complete
+      stopKeepAlive();
     }
   }
 });
@@ -385,6 +471,12 @@ chrome.downloads.onChanged.addListener((downloadDelta) => {
           }
           // Clean up the map
           downloadToTabMap.delete(downloadId);
+          
+          // Check if all operations are complete
+          if (openTabs.size === 0 && urlQueue.length === 0 && openedCount === totalFiles) {
+            console.log('All downloads completed, stopping keep-alive');
+            stopKeepAlive();
+          }
         });
       }, 1000);
     }
