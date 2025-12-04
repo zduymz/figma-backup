@@ -435,15 +435,6 @@
       
     } catch (error) {
       console.error('✗ Error in click sequence:', error);
-      console.error('Error message:', error.message || 'Unknown error');
-      console.error('Error stack:', error.stack || 'No stack trace');
-      console.error('Current URL:', window.location.href);
-      console.error('Full error object:', JSON.stringify({
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
-        url: window.location.href
-      }, null, 2));
       
       // Reload the page to retry
       console.log('Reloading page to retry...');
