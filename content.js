@@ -2,6 +2,31 @@
 (function() {
   console.log('Figma Backup Content Script loaded!', window.location.href);
   
+  // ============================================
+  // CONFIGURATION: CSS Selectors
+  // Update these if Figma changes their UI
+  // ============================================
+  const SELECTORS = {
+    // Main menu button (hamburger menu)
+    toggleMenuButton: 'button[aria-label="Main menu"]',
+    
+    // File menu button - find by text in menuitem
+    fileMenuSelector: 'li[role="menuitem"]',
+    fileMenuText: 'File',
+    
+    // Save As button - find by text in menuitem
+    saveAsMenuSelector: 'li[role="menuitem"]',
+    saveAsMenuText: 'Save local copy',
+    
+    // WAF popup button (appears after clicking Save As)
+    wafOpenPopupButton: '#WAF-open-popup-button',
+    
+    // WAF validation CAPTCHA button
+    captchaVerifyButton: '#amzn-captcha-verify-button'
+  };
+  
+  // ============================================
+  
   // Notify background script that content script is ready
   try {
     chrome.runtime.sendMessage({ type: 'content-script-ready' });
@@ -24,12 +49,12 @@
     
     try {
       // Wait for the CAPTCHA button to appear
-      const captchaButton = await waitForElement('#amzn-captcha-verify-button', 30000);
+      const captchaButton = await waitForElement(SELECTORS.captchaVerifyButton, 30000);
       console.log('Found CAPTCHA button:', captchaButton);
       
       // Click the button
       await robustClick(captchaButton);
-      console.log('✓ Clicked amzn-captcha-verify-button');
+      console.log(`✓ Clicked ${SELECTORS.captchaVerifyButton}`);
       
       // Wait for page to redirect/load after clicking
       // console.log('Waiting for page to process CAPTCHA...');
@@ -118,6 +143,60 @@
       setTimeout(() => {
         observer.disconnect();
         reject(new Error(`Element with id starting with "${prefix}" not found within ${timeout}ms`));
+      }, timeout);
+    });
+  }
+
+  // Wait for a menu item by selector and text content
+  function waitForMenuItemByText(selector, text, timeout = 10000) {
+    return new Promise((resolve, reject) => {
+      // Helper function to find the element
+      const findElement = () => {
+        const elements = document.querySelectorAll(selector);
+        return Array.from(elements).find(el => el.innerText.trim().startsWith(text));
+      };
+
+      // Check if element already exists
+      const existingElement = findElement();
+      if (existingElement) {
+        resolve(existingElement);
+        return;
+      }
+
+      const startTime = Date.now();
+      const observer = new MutationObserver(() => {
+        const element = findElement();
+        if (element) {
+          observer.disconnect();
+          resolve(element);
+        } else if (Date.now() - startTime > timeout) {
+          observer.disconnect();
+          reject(new Error(`Menu item with text "${text}" not found within ${timeout}ms`));
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+
+      // Check again after a short delay in case element appears synchronously
+      setTimeout(() => {
+        const element = findElement();
+        if (element) {
+          observer.disconnect();
+          resolve(element);
+        }
+      }, 100);
+
+      // Timeout after specified time
+      setTimeout(() => {
+        observer.disconnect();
+        const element = findElement();
+        if (!element) {
+          reject(new Error(`Menu item with text "${text}" not found within ${timeout}ms`));
+        }
       }, timeout);
     });
   }
@@ -250,7 +329,7 @@
     const checkWAFButton = async () => {
       if (clicked) return true; // Already clicked, don't check again
       
-      const wafButton = document.querySelector('#WAF-open-popup-button');
+      const wafButton = document.querySelector(SELECTORS.wafOpenPopupButton);
       console.log('Checking for WAF button:', {
         found: !!wafButton,
         visible: wafButton ? wafButton.offsetParent !== null : false,
@@ -270,7 +349,7 @@
           console.log('WAF button is visible, clicking...');
           clicked = true;
           await robustClick(wafButton);
-          console.log('✓ Clicked WAF-open-popup-button');
+          console.log(`✓ Clicked ${SELECTORS.wafOpenPopupButton}`);
           return true;
         }
       }
@@ -385,9 +464,9 @@
       console.log('WAF button watcher started');
 
       // Step 1: Click toggle-menu-button
-      console.log('Step 1: Waiting for toggle-menu-button...');
-      const toggleButton = await waitForElement('#toggle-menu-button', 15000);
-      console.log('Found toggle-menu-button', toggleButton);
+      console.log(`Step 1: Waiting for ${SELECTORS.toggleMenuButton}...`);
+      const toggleButton = await waitForElement(SELECTORS.toggleMenuButton, 15000);
+      console.log(`Found ${SELECTORS.toggleMenuButton}`, toggleButton);
       console.log('Element details:', {
         id: toggleButton.id,
         className: toggleButton.className,
@@ -397,33 +476,44 @@
         style: window.getComputedStyle(toggleButton).display
       });
       robustClick(toggleButton);
-      console.log('✓ Clicked toggle-menu-button');
+      console.log(`✓ Clicked ${SELECTORS.toggleMenuButton}`);
       
-      // Step 2: Click mainMenu-file-menu-*
-      console.log('Step 2: Waiting for mainMenu-file-menu-*...');
-      const fileMenuButton = await waitForElementByIdPrefix('mainMenu-file-menu-', 15000);
-      console.log('Found mainMenu-file-menu-*', fileMenuButton);
+      // Step 2: Click File menu item
+      console.log(`Step 2: Waiting for "${SELECTORS.fileMenuText}" menu item...`);
+      const fileMenuButton = await waitForMenuItemByText(
+        SELECTORS.fileMenuSelector, 
+        SELECTORS.fileMenuText, 
+        15000
+      );
+      console.log(`Found "${SELECTORS.fileMenuText}" menu item`, fileMenuButton);
       console.log('Element details:', {
         id: fileMenuButton.id,
         className: fileMenuButton.className,
         tagName: fileMenuButton.tagName,
+        text: fileMenuButton.innerText.trim(),
         visible: fileMenuButton.offsetParent !== null
       });
       robustClick(fileMenuButton);
-      console.log('✓ Clicked mainMenu-file-menu-*');
+      console.log(`✓ Clicked "${SELECTORS.fileMenuText}" menu item`);
       
-      // Step 3: Click mainMenu-save-as-*
-      console.log('Step 3: Waiting for mainMenu-save-as-*...');
-      const saveAsButton = await waitForElementByIdPrefix('mainMenu-save-as-', 15000);
-      console.log('Found mainMenu-save-as-*', saveAsButton);
+      // Step 3: Click Save As menu item
+      console.log(`Step 3: Waiting for "${SELECTORS.saveAsMenuText}" menu item...`);
+      const saveAsButton = await waitForMenuItemByText(
+        SELECTORS.saveAsMenuSelector, 
+        SELECTORS.saveAsMenuText, 
+        15000
+      );
+      console.log(`Found "${SELECTORS.saveAsMenuText}" menu item`, saveAsButton);
       console.log('Element details:', {
         id: saveAsButton.id,
         className: saveAsButton.className,
         tagName: saveAsButton.tagName,
+        text: saveAsButton.innerText.trim(),
         visible: saveAsButton.offsetParent !== null
       });
-      robustClick(saveAsButton);
-      console.log('✓ Clicked mainMenu-save-as-*');
+      // robustClick(saveAsButton);
+      saveAsButton.click();
+      console.log(`✓ Clicked "${SELECTORS.saveAsMenuText}" menu item`);
       
       // Notify background script that save has been initiated
       try {
