@@ -10,12 +10,12 @@
     // Main menu button (hamburger menu)
     toggleMenuButton: 'button[aria-label="Main menu"]',
     
-    // File menu button - find by text in menuitem
-    fileMenuSelector: 'li[role="menuitem"]',
+    // File menu button - find by text in menuitem (Figma uses menuitemcheckbox)
+    fileMenuSelector: 'div[role="menuitemcheckbox"]',
     fileMenuText: 'File',
     
-    // Save As button - find by text in menuitem
-    saveAsMenuSelector: 'li[role="menuitem"]',
+    // Save As button - find by text in menuitem (same role as File)
+    saveAsMenuSelector: 'div[role="menuitemcheckbox"]',
     saveAsMenuText: 'Save local copy',
     
     // WAF popup button (appears after clicking Save As)
@@ -511,8 +511,8 @@
         text: saveAsButton.innerText.trim(),
         visible: saveAsButton.offsetParent !== null
       });
-      // robustClick(saveAsButton);
-      saveAsButton.click();
+      robustClick(saveAsButton);
+      // saveAsButton.click();
       console.log(`✓ Clicked "${SELECTORS.saveAsMenuText}" menu item`);
       
       // Notify background script that save has been initiated
